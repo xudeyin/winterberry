@@ -8,6 +8,7 @@ var app            = express();
 var http           = require('http');
 //var bodyParser     = require('body-parser');
 //var methodOverride = require('method-override');
+var fortune = require("./lib/fortune.js");
 
 var app = express();
 
@@ -40,13 +41,39 @@ if ('development' == env) {
    // configure stuff here
 }
 
-var fortunes = [
-"Conquer your fears or they will conquer you.",
-"Rivers need springs.",
-"Do not fear what you don't know.",
-"You will have a pleasant surprise.",
-"Whenever possible, keep it simple.",
-];
+function getWeatherData(){
+	return {
+	locations: [
+	{
+	name: 'Portland',
+	forecastUrl: 'http://www.wunderground.com/US/OR/Portland.html',
+	iconUrl: 'http://icons-ak.wxug.com/i/c/k/cloudy.gif',
+	weather: 'Overcast',
+	temp: '54.1 F (12.3 C)',
+	},
+	{
+	name: 'Bend',
+	forecastUrl: 'http://www.wunderground.com/US/OR/Bend.html',
+	iconUrl: 'http://icons-ak.wxug.com/i/c/k/partlycloudy.gif',
+	weather: 'Partly Cloudy',
+	temp: '55.0 F (12.8 C)',
+	},
+	{
+	name: 'Manzanita',
+	forecastUrl: 'http://www.wunderground.com/US/OR/Manzanita.html',
+	iconUrl: 'http://icons-ak.wxug.com/i/c/k/rain.gif',
+	weather: 'Light Rain',
+	temp: '55.0 F (12.8 C)',
+	},
+	],
+	};
+	}
+
+app.use(function(req, res, next){
+	if(!res.locals.partials) res.locals.partials = {};
+	res.locals.partials.weather = getWeatherData();
+	next();
+});
 
 app.get('/', function(req, res){
 	res.render('home');
@@ -56,9 +83,7 @@ app.get('/', function(req, res){
 
 app.get('/about', function(req, res){
 	var randomFortune =
-		fortunes[Math.floor(Math.random() * fortunes.length)];
-    //console.log(randomFortune);
-	res.render('about', { fortune: randomFortune });
+	res.render('about', { fortune: fortune.getFortune() });
 	});
 
 //custom 404 page
@@ -73,6 +98,7 @@ console.error(err.stack);
 res.status(500);
 res.render('500');
 });
+
 
 http.createServer(app).listen(app.get('port'), function(){
   console.log('Express server listening on port ' + app.get('port'));
