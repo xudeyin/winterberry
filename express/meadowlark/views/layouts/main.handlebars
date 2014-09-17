@@ -3,6 +3,15 @@
 <head>
     <title>Meadowlark Travel</title>
 </head>
+
+{{#if flash}}
+<div class="alert alert-dismissible alert-{{flash.type}}">
+<button type="button" class="close"
+data-dismiss="alert" aria-hidden="true">&times;<button>
+<strong>{{flash.intro}}</strong> {{{flash.message}}}
+</div>
+{{/if}}
+
 <body>
     <header><img src="/img/image.jpg" alt="Meadowlark Travel Logo"></header>
     {{{body}}}

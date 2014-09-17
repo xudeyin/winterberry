@@ -11,6 +11,8 @@ var credentials = require('./credentials.js');
 var fortune = require("./lib/fortune.js");
 var jqupload = require('jquery-file-upload-middleware');
 var fs = require('fs');
+var util = require('util');
+var Vacation = require('./models/vacation.js');
 
 var app = express();
 
@@ -61,9 +63,12 @@ var vacationPhotoDir = dataDir + '/vacation-photo';
 fs.existsSync(dataDir) || fs.mkdirSync(dataDir);
 fs.existsSync(vacationPhotoDir) || fs.mkdirSync(vacationPhotoDir);
 
-function saveContestEntry(contestName, email, year, month, photoPath){
+console.log('dataDir = ' + dataDir);
+console.log('photoDir = ' + vacationPhotoDir);
+
+function saveContestEntry(contestName, email, year, month, photoPath) {
 	// TODO...this will come later
-	}
+}
 
 var server = http.createServer(app).listen(app.get('port'), function() {
 	console.log('Listening on port %d.', app.get('port'));
@@ -103,6 +108,98 @@ if ('development' == env) {
 
 app.use(require('./lib/tourRequiresWaiver.js'));
 
+app.use(function(req, res, next) {
+	// if there's a flash message, transfer
+	// it to the context, then clear it
+	res.locals.flash = req.session.flash;
+	delete req.session.flash;
+	next();
+});
+
+
+//middleware to provide cart data for header
+app.use(function(req, res, next) {
+    var cart = req.session.cart;
+    res.locals.cartItems = cart && cart.items ? cart.items.length : 0;
+    next();
+});
+
+
+// database stuff
+var mongoose = require('mongoose');
+var options = {
+	server : {
+		socketOptions : {
+			keepAlive : 1
+		}
+	}
+};
+switch (app.get('env')) {
+case 'development':
+	mongoose.connect(credentials.mongo.development.connectionString, options);
+	break;
+case 'production':
+	mongoose.connect(credentials.mongo.production.connectionString, options);
+	break;
+default:
+	throw new Error('Unknown execution environment: ' + app.get('env'));
+}
+
+//initialize vacations
+Vacation
+		.find(function(err, vacations) {
+			if (vacations.length)
+				return;
+
+			new Vacation({
+				name : 'Hood River Day Trip',
+				slug : 'hood-river-day-trip',
+				category : 'Day Trip',
+				sku : 'HR199',
+				description : 'Spend a day sailing on the Columbia and '
+						+ 'enjoying craft beers in Hood River!',
+				priceInCents : 9995,
+				tags : [ 'day trip', 'hood river', 'sailing', 'windsurfing',
+						'breweries' ],
+				inSeason : true,
+				maximumGuests : 16,
+				available : true,
+				packagesSold : 0,
+			}).save();
+
+			new Vacation({
+				name : 'Oregon Coast Getaway',
+				slug : 'oregon-coast-getaway',
+				category : 'Weekend Getaway',
+				sku : 'OC39',
+				description : 'Enjoy the ocean air and quaint coastal towns!',
+				priceInCents : 269995,
+				tags : [ 'weekend getaway', 'oregon coast', 'beachcombing' ],
+				inSeason : false,
+				maximumGuests : 8,
+				available : true,
+				packagesSold : 0,
+			}).save();
+
+			new Vacation(
+					{
+						name : 'Rock Climbing in Bend',
+						slug : 'rock-climbing-in-bend',
+						category : 'Adventure',
+						sku : 'B99',
+						description : 'Experience the thrill of rock climbing in the high desert.',
+						priceInCents : 289995,
+						tags : [ 'weekend getaway', 'bend', 'high desert',
+								'rock climbing', 'hiking', 'skiing' ],
+						inSeason : true,
+						requiresWaiver : true,
+						maximumGuests : 4,
+						available : false,
+						packagesSold : 0,
+						notes : 'The tour guide is currently recovering from a skiing accident.',
+					}).save();
+		});
+
 app.use('/upload', function(req, res, next) {
 	var now = Date.now();
 	jqupload.fileHandler({
@@ -113,14 +210,6 @@ app.use('/upload', function(req, res, next) {
 			return '/uploads/' + now;
 		},
 	})(req, res, next);
-});
-
-app.use(function(req, res, next) {
-	// if there's a flash message, transfer
-	// it to the context, then clear it
-	res.locals.flash = req.session.flash;
-	delete req.session.flash;
-	next();
 });
 
 app.get('/newsletter', function(req, res) {
@@ -172,7 +261,23 @@ app.post('/contest/vacation-photo/:year/:month', function(req, res) {
 		var dir = vacationPhotoDir + '/' + Date.now();
 		var path = dir + '/' + photo.name;
 		fs.mkdirSync(dir);
-		fs.renameSync(photo.path, dir + '/' + photo.name);
+
+		console.log('photo.path = ' + photo.path);
+		console.log('photo.name = ' + dir + '/' + photo.name);
+
+		//fs.renameSync(photo.path, dir + '/' + photo.name);
+		//to fix cross-partition copy, replace the above line with
+		//the code below - dxu 0917
+		var readStream = fs.createReadStream(photo.path);
+		var writeStream = fs.createWriteStream(dir + '/' + photo.name);
+
+		//		util.pump(readStream, writeStream, function() {
+		//			fs.unlinkSync(photo.path);
+		//		});
+
+		readStream.pipe(writeStream);
+		fs.unlinkSync(photo.path);
+
 		saveContestEntry('vacation-photo', fields.email, req.params.year,
 				req.params.month, path);
 		req.session.flash = {
@@ -229,6 +334,30 @@ app.get('/about', function(req, res) {
 
 app.get('/thank-you', function(req, res) {
 	res.render('thank-you');
+});
+
+app.get('/contest/vacation-photo/entries', function(req, res) {
+	res.render('contest/entries');
+});
+
+// see companion repository for /cart/add route....
+app.get('/vacations', function(req, res) {
+	Vacation.find({
+		available : true
+	}, function(err, vacations) {
+		var context = {
+			vacations : vacations.map(function(vacation) {
+				return {
+					sku : vacation.sku,
+					name : vacation.name,
+					description : vacation.description,
+					price : vacation.getDisplayPrice(),
+					inSeason : vacation.inSeason,
+				}
+			})
+		};
+		res.render('vacations', context);
+	});
 });
 
 // custom 404 page
