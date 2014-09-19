@@ -331,21 +331,23 @@ app.use(function(req, res, next) {
 	next();
 });
 
-app.get('/', function(req, res) {
-	res.render('home');
-});
+require('./routes/routes.js')(app);
 
-// app.get('/users', user.list);
-
-app.get('/about', function(req, res) {
-	var randomFortune = res.render('about', {
-		fortune : fortune.getFortune()
-	});
-});
-
-app.get('/thank-you', function(req, res) {
-	res.render('thank-you');
-});
+//app.get('/', function(req, res) {
+//	res.render('home');
+//});
+//
+//// app.get('/users', user.list);
+//
+//app.get('/about', function(req, res) {
+//	var randomFortune = res.render('about', {
+//		fortune : fortune.getFortune()
+//	});
+//});
+//
+//app.get('/thank-you', function(req, res) {
+//	res.render('thank-you');
+//});
 
 app.get('/contest/vacation-photo/entries', function(req, res) {
 	res.render('contest/entries');
@@ -402,6 +404,26 @@ app.get('/vacations', function(req, res) {
 		res.render('vacations', context);
 	});
 });
+
+//automatically rendering views
+//add this right above the 404 handle:
+var autoViews = {};
+var fs = require('fs');
+app.use(function(req, res, next) {
+	var path = req.path.toLowerCase();
+	// check cache; if it's there, render the view
+	if (autoViews[path])
+		return res.render(autoViews[path]);
+	// if it's not in the cache, see if there's
+	// a .handlebars file that matches
+	if (fs.existsSync(__dirname + '/views' + path + '.handlebars')) {
+		autoViews[path] = path.replace(/^\//, '');
+		return res.render(autoViews[path]);
+	}
+	// no view found; pass on to 404 handler
+	next();
+});
+
 
 // custom 404 page
 app.use(function(req, res) {
