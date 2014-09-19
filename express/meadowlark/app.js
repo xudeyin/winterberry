@@ -13,6 +13,7 @@ var jqupload = require('jquery-file-upload-middleware');
 var fs = require('fs');
 var util = require('util');
 var Vacation = require('./models/vacation.js');
+var geocode = require('./lib/geocode.js');
 
 var app = express();
 
@@ -156,9 +157,141 @@ app.use(function(req, res, next) {
     next();
 });
 
-//initialize vacations
+
+// dealer...geocoding
+var Dealer = require('./models/dealer.js');
+
+var dealerCache = {
+	lastRefreshed : 0,
+	refreshInterval : 10 * 1000,
+	//refreshInterval : 60 * 60 * 1000,
+	jsonUrl : '/dealers.json',
+	geocodeLimit : 2000,
+	geocodeCount : 0,
+	geocodeBegin : 0,
+};
+
+dealerCache.jsonFile = __dirname + '/public' + dealerCache.jsonUrl;
+
+function geocodeDealer(dealer) {
+	var addr = dealer.getAddress(' ');
+	if (addr === dealer.geocodedAddress)
+		return;
+	// already geocoded
+	if (dealerCache.geocodeCount >= dealerCache.geocodeLimit) {
+		// has 24 hours passed since we last started geocoding?
+		if (Date.now() > dealerCache.geocodeCount + 24 * 60 * 60 * 1000) {
+			dealerCache.geocodeBegin = Date.now();
+			dealerCache.geocodeCount = 0;
+		} else {
+			// we can't geocode this now: we've
+			// reached our usage limit
+			return;
+		}
+	}
+	geocode(addr, function(err, coords) {
+		if (err)
+			return console.log('Geocoding failure for ' + addr);
+		dealer.lat = coords.lat;
+		dealer.lng = coords.lng;
+		dealer.save();
+	});
+}
+
+//initialize dealer
+Dealer.find(function(err, dealers) {
+	console.log("+++++ dealer init is called.")
+	if (dealers.length)
+		return;
+
+	new Dealer({
+		name : 'Dealer 001',
+		address1 : '35 winterberry street',
+		city : 'Bedford',
+		state : 'MA',
+		zip : '01730',
+		country : 'U.S.A.',
+		phone : '1111111111',
+		website : 'winterbery.tonidobit.com',
+		active : true,
+	}).save();
+
+	new Dealer({
+		name : 'Dealer 002',
+		address1 : '7 Gleason Road',
+		city : 'Bedford',
+		state : 'MA',
+		zip : '01730',
+		country : 'U.S.A.',
+		phone : '2222222222',
+		website : 'winterbery.tonidobit.com',
+		active : true,
+	}).save();
+	
+	new Dealer({
+		name : 'Dealer 003',
+		address1 : '1 Russett Road',
+		city : 'Bedford',
+		state : 'MA',
+		zip : '01730',
+		country : 'U.S.A.',
+		phone : '3333333333',
+		website : 'winterbery.tonidobit.com',
+		active : true,
+	}).save();
+	
+	new Dealer({
+		name : 'Dealer 004',
+		address1 : '62 Notre Dame Road',
+		city : 'Bedford',
+		state : 'MA',
+		zip : '01730',
+		country : 'U.S.A.',
+		phone : '4444444444',
+		website : 'winterbery.tonidobit.com',
+		active : true,
+	}).save();
+});
+
+dealerCache.refresh = function(cb) {
+	if (Date.now() > dealerCache.lastRefreshed + dealerCache.refreshInterval) {
+		// we need to refresh the cache
+		console.log('===> start dealer cache refresh.')
+		Dealer.find({
+			active : true
+		}, function(err, dealers) {
+			if (err)
+				return console.log('Error fetching dealers: ' + err);
+			// geocodeDealer will do nothing if coordinates are up-to-date
+			dealers.forEach(geocodeDealer);
+			// we now write all the dealers out to our cached JSON file
+			fs.writeFileSync(dealerCache.jsonFile, JSON.stringify(dealers));
+			// all done -- invoke callback
+			cb();
+		});
+	}
+}
+
+function refreshDealerCacheForever() {
+	dealerCache.refresh(function() {
+		// call self after refresh interval
+		setTimeout(refreshDealerCacheForever, dealerCache.refreshInterval);
+	});
+}
+
+// create empty cache if it doesn't exist to prevent 404 errors
+if (!fs.existsSync(dealerCache.jsonFile)) {
+	fs.writeFileSync(JSON.stringify([]));
+}
+// start refreshing cache
+refreshDealerCacheForever();
+
+
+		
+// initialize vacations
 Vacation
 		.find(function(err, vacations) {
+			console.log("+++++ vacation.find is called.")
 			if (vacations.length)
 				return;
 
@@ -241,6 +374,11 @@ app.post('/process', function(req, res) {
 		// if there were an error, we would redirect to an error page
 		res.redirect(303, '/thank-you');
 	}
+});
+
+app.get('/dealers', function(req, res) {
+	console.log('****** dealers route called');
+	res.render('dealers');
 });
 
 app.get('/contest/vacation-photo', function(req, res) {
@@ -332,22 +470,6 @@ app.use(function(req, res, next) {
 });
 
 require('./routes/routes.js')(app);
-
-//app.get('/', function(req, res) {
-//	res.render('home');
-//});
-//
-//// app.get('/users', user.list);
-//
-//app.get('/about', function(req, res) {
-//	var randomFortune = res.render('about', {
-//		fortune : fortune.getFortune()
-//	});
-//});
-//
-//app.get('/thank-you', function(req, res) {
-//	res.render('thank-you');
-//});
 
 app.get('/contest/vacation-photo/entries', function(req, res) {
 	res.render('contest/entries');
