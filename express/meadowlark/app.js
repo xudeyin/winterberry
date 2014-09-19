@@ -55,6 +55,8 @@ app.use(function(req, res, next) {
 	// execute the rest of the request chain in the domain
 	domain.run(next);
 });
+
+
 // other middleware and routes go here
 
 //make sure data directory exists
@@ -79,8 +81,8 @@ app.set('port', process.env.PORT || 3000);
 app.set('views', __dirname + '/views');
 
 // cookie parser
-app.use(require('cookie-parser')(credentials.cookieSecret));
-app.use(require('express-session')());
+//app.use(require('cookie-parser')(credentials.cookieSecret));
+//app.use(require('express-session')());
 
 var handlebars = require('express-handlebars').create({
 	defaultLayout : 'main',
@@ -106,24 +108,6 @@ if ('development' == env) {
 	// configure stuff here
 }
 
-app.use(require('./lib/tourRequiresWaiver.js'));
-
-app.use(function(req, res, next) {
-	// if there's a flash message, transfer
-	// it to the context, then clear it
-	res.locals.flash = req.session.flash;
-	delete req.session.flash;
-	next();
-});
-
-
-//middleware to provide cart data for header
-app.use(function(req, res, next) {
-    var cart = req.session.cart;
-    res.locals.cartItems = cart && cart.items ? cart.items.length : 0;
-    next();
-});
-
 
 // database stuff
 var mongoose = require('mongoose');
@@ -144,6 +128,33 @@ case 'production':
 default:
 	throw new Error('Unknown execution environment: ' + app.get('env'));
 }
+
+var MongoSessionStore = require('session-mongoose')(require('connect'));
+var sessionStore = new MongoSessionStore({
+	url : credentials.mongo.development.connectionString
+});
+app.use(require('cookie-parser')(credentials.cookieSecret));
+app.use(require('express-session')({
+	store : sessionStore
+}));
+
+app.use(require('./lib/tourRequiresWaiver.js'));
+
+app.use(function(req, res, next) {
+	// if there's a flash message, transfer
+	// it to the context, then clear it
+	res.locals.flash = req.session.flash;
+	delete req.session.flash;
+	next();
+});
+
+
+//middleware to provide cart data for header
+app.use(function(req, res, next) {
+    var cart = req.session.cart;
+    res.locals.cartItems = cart && cart.items ? cart.items.length : 0;
+    next();
+});
 
 //initialize vacations
 Vacation
@@ -341,21 +352,53 @@ app.get('/contest/vacation-photo/entries', function(req, res) {
 });
 
 // see companion repository for /cart/add route....
+app.get('/set-currency/:currency', function(req, res) {
+	req.session.currency = req.params.currency;
+	return res.redirect(303, '/vacations');
+});
+function convertFromUSD(value, currency) {
+	switch (currency) {
+	case 'USD':
+		return value * 1;
+	case 'GBP':
+		return value * 0.6;
+	case 'BTC':
+		return value * 0.0023707918444761;
+	default:
+		return NaN;
+	}
+}
+
 app.get('/vacations', function(req, res) {
 	Vacation.find({
 		available : true
 	}, function(err, vacations) {
+		var currency = req.session.currency || 'USD';
 		var context = {
+			currency : currency,
 			vacations : vacations.map(function(vacation) {
 				return {
 					sku : vacation.sku,
 					name : vacation.name,
 					description : vacation.description,
-					price : vacation.getDisplayPrice(),
 					inSeason : vacation.inSeason,
+					price : convertFromUSD(vacation.priceInCents / 100,
+							currency),
+					qty : vacation.qty,
 				}
 			})
 		};
+		switch (currency) {
+		case 'USD':
+			context.currencyUSD = 'selected';
+			break;
+		case 'GBP':
+			context.currencyGBP = 'selected';
+			break;
+		case 'BTC':
+			context.currencyBTC = 'selected';
+			break;
+		}
 		res.render('vacations', context);
 	});
 });
