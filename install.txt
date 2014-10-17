@@ -1,0 +1,22 @@
+Follow this link to install node.js on ubuntu
+https://www.digitalocean.com/community/tutorials/how-to-install-node-js-on-an-ubuntu-14-04-server
+
+    sudo apt-get update
+    sudo apt-get install nodejs
+    sudo apt-get install npm
+
+Note that node is called nodejs on ubuntu 14
+
+Then follow this link to install express and eclipse plugin
+http://www.nodeclipse.org/updates/
+
+$ sudo npm install -g nodeclipse
+
+
+$ sudo npm install -g express-generator
+
+
+$ sudo npm install -g express
+
+
+
